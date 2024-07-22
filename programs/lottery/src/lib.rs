@@ -51,16 +51,16 @@ pub mod lottery {
         lottery.prize_token = ctx.accounts.mint.key();
         lottery.prize_bump = prize_bump;
         lottery.proceeds_bump = proceeds_bump;
-        //lottery.max_tickets_per_buyer = 5;
+        lottery.max_tickets_per_buyer = 5;
 
-        // let app_stats = &mut ctx.accounts.app_stats;
-        // app_stats.current_round += 1;
-        // app_stats.current_round_key = lottery.key();
+        let app_stats = &mut ctx.accounts.app_stats;
+        app_stats.current_round += 1;
+        app_stats.current_round_key = lottery.key();
         
         Ok(())
     }
 
-    pub fn buy_tickets(ctx: Context<BuyTickets>, amount: u64) -> Result<()> {
+    pub fn buy_tickets(ctx: Context<BuyTickets>, ticket_amount: u64) -> Result<()> {
         let lottery: &mut Account<'_, Lottery> = &mut ctx.accounts.lottery;
         let ticket_price:u64 = lottery.ticket_price;
         
@@ -73,9 +73,24 @@ pub mod lottery {
         }
 
         // check available tickets
-        if amount == 0 || amount > (lottery.left_tickets.len() as u64) {
+        if ticket_amount == 0 || ticket_amount > (lottery.left_tickets.len() as u64) {
             return err!(ErrCode::InvalidArgus);
         }
+
+        //let total_amount = amount * ticket_price;
+        let fee_amount: u64 = (ticket_amount as u64 * ticket_price * (ctx.accounts.app_stats.fee_percent as u64)) / 100;
+        let real_amount:u64 = (ticket_amount as u64) * ticket_price - fee_amount;
+
+        // transfer fee to fee account
+        // let cpi_accounts = Transfer {
+        //     from: ctx.accounts.creator_token.to_account_info(),
+        //     to: ctx.accounts.fee_account.to_account_info(),
+        //     authority: ctx.accounts.signer.to_account_info(),
+        // };
+        // let cpi_program = ctx.accounts.token_program.to_account_info();
+        // let cpi_ctx: CpiContext<Transfer> = CpiContext::new(cpi_program, cpi_accounts);
+        // token::transfer(cpi_ctx, fee_amount)?;
+
 
         // transfer tokens from buyer to prize account
         let cpi_accounts = Transfer {
@@ -85,9 +100,9 @@ pub mod lottery {
         };
         let cpi_program = ctx.accounts.token_program.to_account_info();
         let cpi_ctx: CpiContext<Transfer> = CpiContext::new(cpi_program, cpi_accounts);
-        token::transfer(cpi_ctx, ticket_price * amount)?;
+        token::transfer(cpi_ctx, real_amount)?;
 
-        for _ in 0..amount {
+        for _ in 0..ticket_amount {
             let slot = ctx.accounts.clock.unix_timestamp as u64;
             let n = get_sha256_hashed_random(slot,lottery.left_tickets.len() as u64);
             let random_number = (n as usize) % lottery.left_tickets.len();
@@ -104,7 +119,7 @@ pub mod lottery {
                     let mut buyer = lottery.buyers.remove(index);
 
                     // check if the buyer has reached the maximum number of tickets
-                    if buyer.tickets.len() + amount as usize >= lottery.max_tickets_per_buyer as usize {
+                    if buyer.tickets.len() + ticket_amount as usize >= lottery.max_tickets_per_buyer as usize {
                         return err!(ErrCode::MaxTicketsPerBuyer);
                     }
 
@@ -114,7 +129,7 @@ pub mod lottery {
                 },
                 None => {
                     // check if the buyer has reached the maximum number of tickets
-                    if amount as usize >= lottery.max_tickets_per_buyer as usize {
+                    if ticket_amount as usize >= lottery.max_tickets_per_buyer as usize {
                         return err!(ErrCode::MaxTicketsPerBuyer);
                     }
                     // If the buyer does not exist, create a new buyer and add them to the list
@@ -129,11 +144,11 @@ pub mod lottery {
             lottery.left_tickets.remove(random_number);
         }
         // lottery.collected += real_amount;
-        lottery.collected += ticket_price * amount;
+        lottery.collected += ticket_price * ticket_amount;
         Ok(())
     }
 
-    pub fn reveal_winner(ctx: Context<RevealWinner>) -> Result<()> {
+    pub fn reveal_winners(ctx: Context<RevealWinner>) -> Result<()> {
         let lottery = &mut ctx.accounts.lottery;
         let now = ctx.accounts.clock.unix_timestamp as i64;
         let end_ts = lottery.end;
@@ -323,7 +338,7 @@ pub struct CreateLottery<'info> {
     pub mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    //pub app_stats: Account<'info, AppStats>,
+    pub app_stats: Account<'info, AppStats>,
 }
 
 #[account]
