@@ -1,6 +1,16 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::{ self, Create, AssociatedToken };
-use anchor_spl::token::{ self, Transfer, Mint, Token, TokenAccount };
+//use anchor_spl::associated_token::{ self, Create, AssociatedToken };
+// use anchor_spl::token::{ self, Transfer, Mint, Token, TokenAccount };
+
+use anchor_spl::{
+    token_interface::{TokenAccount, Mint, MintTo, mint_to,
+    CloseAccount, close_account,   
+    TokenInterface, TransferChecked, transfer_checked}, 
+    associated_token::AssociatedToken};
+
+
+//use anchor_spl::token_2022::{ Transfer};
+
 mod randomness_tools;
 use randomness_tools::get_sha256_hashed_random;
 declare_id!("E5Tmweyj2XLDn1L746PPdt7dAbG397qvTj8wYBqEaBSX");
@@ -93,14 +103,14 @@ pub mod lottery {
 
 
         // transfer tokens from buyer to prize account
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.creator_token.to_account_info(),
-            to: ctx.accounts.prize.to_account_info(),
-            authority: ctx.accounts.signer.to_account_info(),
-        };
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-        let cpi_ctx: CpiContext<Transfer> = CpiContext::new(cpi_program, cpi_accounts);
-        token::transfer(cpi_ctx, real_amount)?;
+        // let cpi_accounts = Transfer {
+        //     from: ctx.accounts.creator_token.to_account_info(),
+        //     to: ctx.accounts.prize.to_account_info(),
+        //     authority: ctx.accounts.signer.to_account_info(),
+        // };
+        // let cpi_program = ctx.accounts.token_program.to_account_info();
+        // let cpi_ctx: CpiContext<Transfer> = CpiContext::new(cpi_program, cpi_accounts);
+        //token::transfer(cpi_ctx, real_amount)?;
 
         for _ in 0..ticket_amount {
             let slot = ctx.accounts.clock.unix_timestamp as u64;
@@ -226,35 +236,35 @@ pub mod lottery {
         lottery.claimed_amount += amount;
 
         // format recipient token account if empty
-        if ctx.accounts.user_token.data_is_empty() {
-            let cpi_accounts = Create {
-                payer: ctx.accounts.user.to_account_info(),
-                associated_token: ctx.accounts.user_token.clone(),
-                authority: ctx.accounts.user.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            };
-            let cpi_program = ctx.accounts.associated_token_program.to_account_info();
-            let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-            associated_token::create(cpi_ctx)?;
-        }
+        // if ctx.accounts.user_token.data_is_empty() {
+        //     let cpi_accounts = Create {
+        //         payer: ctx.accounts.user.to_account_info(),
+        //         associated_token: ctx.accounts.user_token.clone(),
+        //         authority: ctx.accounts.user.to_account_info(),
+        //         mint: ctx.accounts.mint.to_account_info(),
+        //         system_program: ctx.accounts.system_program.to_account_info(),
+        //         token_program: ctx.accounts.token_program.to_account_info(),
+        //     };
+        //     let cpi_program = ctx.accounts.associated_token_program.to_account_info();
+        //     let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        //     associated_token::create(cpi_ctx)?;
+        // }
 
-        // send token
-        let nonce: u8 = lottery.prize_bump;
-        let lottery = &mut ctx.accounts.lottery;
-        let binding: Pubkey = lottery.key();
-        let seeds: &[&[u8]; 3] = &[b"prize".as_ref(), binding.as_ref(), &[nonce]];
-        let signer: &[&[&[u8]]; 1] = &[&seeds[..]];
+        // // send token
+        // let nonce: u8 = lottery.prize_bump;
+        // let lottery = &mut ctx.accounts.lottery;
+        // let binding: Pubkey = lottery.key();
+        // let seeds: &[&[u8]; 3] = &[b"prize".as_ref(), binding.as_ref(), &[nonce]];
+        // let signer: &[&[&[u8]]; 1] = &[&seeds[..]];
 
-        let cpi_accounts: Transfer<'_> = Transfer {
-            from: ctx.accounts.prize.to_account_info(),
-            to: ctx.accounts.user_token.to_account_info(),
-            authority: ctx.accounts.prize.to_account_info(),
-        };
-        let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
-        let cpi_ctx: CpiContext<'_, '_, '_, '_, Transfer<'_>> = CpiContext::new(cpi_program, cpi_accounts).with_signer(signer);
-        token::transfer(cpi_ctx, lottery.claimed_amount)?;
+        // let cpi_accounts: Transfer<'_> = Transfer {
+        //     from: ctx.accounts.prize.to_account_info(),
+        //     to: ctx.accounts.user_token.to_account_info(),
+        //     authority: ctx.accounts.prize.to_account_info(),
+        // };
+        // let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
+        // let cpi_ctx: CpiContext<'_, '_, '_, '_, Transfer<'_>> = CpiContext::new(cpi_program, cpi_accounts).with_signer(signer);
+        //token::transfer(cpi_ctx, lottery.claimed_amount)?;
         Ok(())
     }
 
@@ -330,13 +340,13 @@ pub struct CreateLottery<'info> {
         token::mint = mint,
         token::authority = prize
     )]
-    pub prize: Account<'info, TokenAccount>,
+    pub prize:  InterfaceAccount<'info, TokenAccount>,
 
     #[account(seeds = [b"proceeds", lottery.key().as_ref()], bump)]
     pub proceeds: SystemAccount<'info>,
     pub clock: Sysvar<'info, Clock>,
-    pub mint: Account<'info, Mint>,
-    pub token_program: Program<'info, Token>,
+    pub mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
     pub app_stats: Account<'info, AppStats>,
 }
@@ -395,16 +405,17 @@ pub struct BuyTickets<'info> {
         mut,
         constraint = creator_token.mint == lottery.prize_token
     )]
-    pub creator_token: Account<'info, TokenAccount>,
+    pub creator_token:  InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         mut,
         seeds = [b"prize", lottery.key().as_ref()],
         bump = lottery.prize_bump
     )]
-    pub prize: Account<'info, TokenAccount>,
+    pub prize:  InterfaceAccount<'info, TokenAccount>,
     // #[account(address = token::ID)]
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
+
 
     /// CHECK: don't read and write this account
     #[account(mut)]
@@ -437,10 +448,10 @@ pub struct ClaimPrize<'info> {
     pub user_token: AccountInfo<'info>,
 
     #[account(mut)]
-    pub prize: Account<'info, TokenAccount>,
-    pub mint: Account<'info, Mint>,
+    pub prize: InterfaceAccount<'info, TokenAccount>,
+    pub mint: InterfaceAccount<'info, Mint>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
@@ -454,15 +465,15 @@ pub struct CollectProceed<'info> {
     pub creator: Signer<'info>,
 
     #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
+    pub user_token:  InterfaceAccount<'info, TokenAccount>,
 
     #[account(mut)]
-    pub prize: Account<'info, TokenAccount>,
+    pub prize:  InterfaceAccount<'info, TokenAccount>,
 
     #[account(mut)]
     pub proceeds: SystemAccount<'info>,
 
-    pub mint: Account<'info, Mint>,
+    pub mint: InterfaceAccount<'info, Mint>,
 
     #[account(
         mut, 
@@ -479,7 +490,7 @@ pub struct CollectProceed<'info> {
     /// CHECK: don't read and write this account
     pub owner: AccountInfo<'info>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
