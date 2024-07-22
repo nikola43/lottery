@@ -1,0 +1,287 @@
+import * as anchor from "@coral-xyz/anchor";
+import { Program } from "@coral-xyz/anchor";
+import { Raffle } from "../target/types/raffle";
+import { PublicKey, LAMPORTS_PER_SOL, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { BN } from "bn.js";
+import NodeWallet from "@coral-xyz/anchor/dist/cjs/nodewallet";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
+
+
+describe("raffle", () => {
+
+  function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  // Configure the client to use the local cluster.
+  const provider = anchor.AnchorProvider.env();
+
+  anchor.setProvider(provider);
+  const connection = provider.connection;
+  const program = anchor.workspace.Raffle as Program<Raffle>;
+  const mint = new PublicKey('FxmGV1cYCCRh1WesUfM8xeLenP2KWdfTaUhTwQDSkjVV');
+
+  const owner = provider.wallet as NodeWallet;
+  const user1 = anchor.web3.Keypair.generate();
+  const user2 = anchor.web3.Keypair.generate();
+  const raffle = anchor.web3.Keypair.generate();
+  const feeAccount = new PublicKey('2xjaQvvUxLjdffPWjaaNnXp5aoCRMPhLtLxYPyZNnKQq');
+
+  it ("initalize", async () => {
+    const fee_percent = 5;
+    const [appStats, bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('app-stats'),
+        owner.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    const tx = await program.methods.createAppStats(
+      fee_percent,
+      bump
+    ).accounts({
+      appStats,
+      feeAccount
+    }).rpc();
+  });
+
+  it("Create competition", async () => {
+    const price = new BN(1 * LAMPORTS_PER_SOL);
+    const ticketAmount = 2;
+    const prizeAmount = new BN(100 * Math.pow(10, 9));
+    const end = new BN(Date.now() + 1);
+  
+    const [prize, prize_bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('prize'),
+        raffle.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('proceeds'),
+        raffle.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+
+    const ixn1 = await program.methods.createRaffle(
+      price,
+      ticketAmount,
+      prizeAmount,
+      end,
+      prize_bump,
+      proceeds_bump
+    ).accounts({
+      raffle: raffle.publicKey,
+      mint,
+      prize,
+      proceeds
+    }).signers([
+      raffle,
+      owner.payer
+    ]).instruction();
+
+    const creatorToken = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      owner.payer,
+      mint,
+      owner.publicKey
+    );
+
+
+    const ixn2 = await program.methods.addPrize().accounts({
+      raffle: raffle.publicKey,
+      creatorToken: creatorToken.address,
+      prize,
+      mint,
+      signer: owner.publicKey
+    }).instruction();
+
+
+
+    const instructions = [ixn1, ixn2];
+
+    const { blockhash } = await connection.getLatestBlockhash();
+
+    const message = new TransactionMessage({
+      payerKey: owner.publicKey,
+      recentBlockhash: blockhash,
+      instructions
+    }).compileToV0Message();
+
+    const transaction = new VersionedTransaction(message);
+
+    transaction.sign([owner.payer, raffle]);
+
+    const tx = await connection.sendTransaction(transaction);
+
+
+    console.log("Creating Competion txn hash is ", tx);
+  });
+
+  it("Buy tickets", async () => {
+    const airdropTx1 = await connection.requestAirdrop(
+      user1.publicKey,
+      2 * LAMPORTS_PER_SOL
+    );
+    const airdropTx2 = await connection.requestAirdrop(
+      user2.publicKey,
+      2 * LAMPORTS_PER_SOL
+    );
+    await connection.confirmTransaction(airdropTx1);
+    await connection.confirmTransaction(airdropTx2);
+
+
+    const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('proceeds'),
+        raffle.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    const [appStats, bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('app-stats'),
+        owner.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    let balance = await connection.getBalance(user1.publicKey);
+    console.log(balance)
+
+    const tx1 = await program.methods.buyTickets(
+      1
+    ).accounts({
+      raffle: raffle.publicKey,
+      signer: user1.publicKey,
+      proceeds,
+      appStats,
+      owner: owner.publicKey,
+      feeAccount
+    }).signers([user1]).rpc();
+    console.log("user1 bought a ticket txn hash is ", tx1);
+
+    balance = await connection.getBalance(user1.publicKey);
+    console.log(balance)
+
+    const tx2 = await program.methods.buyTickets(
+      1
+    ).accounts({
+      raffle: raffle.publicKey,
+      signer: user2.publicKey,
+      proceeds,
+      appStats,
+      owner: owner.publicKey,
+      feeAccount
+    }).signers([user2]).rpc();
+    console.log("user2 bought a ticket txn hash is ", tx2);
+
+    const raffleInfo = await program.account.raffle.fetch(raffle.publicKey);
+    // console.log(raffleInfo.buyers.length);
+  });
+
+  it("Reveal winner", async () => {
+    await sleep(2000)
+    const tx = await program.methods.revealWinner().accounts({
+      raffle: raffle.publicKey,
+      clock: anchor.web3.SYSVAR_CLOCK_PUBKEY
+    }).rpc().catch(e => console.log(e));
+    const raffleInfo = await program.account.raffle.fetch(raffle.publicKey);
+    console.log(tx);
+    console.log('Winner is', raffleInfo.winner.toBase58());
+  });
+
+  it("Claim prize", async () => {
+    const raffleInfo = await program.account.raffle.fetch(raffle.publicKey);
+    let winner = user1;
+    if (raffleInfo.winner.toBase58() === user1.publicKey.toBase58()) {
+      winner = user1;
+    } else {
+      winner = user2;
+    }
+
+    const [prize, prize_bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('prize'),
+        raffle.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    const userToken = await getOrCreateAssociatedTokenAccount(
+      connection,
+      winner,
+      mint,
+      winner.publicKey
+    )
+
+    const tx = await program.methods.claimPrize().accounts(
+      {
+        user: winner.publicKey,
+        raffle: raffle.publicKey,
+        prize,
+        mint,
+        userToken: userToken.address
+      }
+    ).signers([winner]).rpc();
+    console.log(tx);
+  })
+  it("Collect proceeds", async () => {
+    let accounts = await program.account.raffle.all();
+    console.log(accounts.length)
+    const creatorToken = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      owner.payer,
+      mint,
+      owner.publicKey
+    );
+
+    const [prize, prize_bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('prize'),
+        raffle.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('proceeds'),
+        raffle.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+    let balance = await connection.getBalance(owner.publicKey);
+    console.log(balance / LAMPORTS_PER_SOL);
+    const [appStats, bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('app-stats'),
+        owner.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+    const tx = await program.methods.collectProceed().accounts({
+      raffle: raffle.publicKey,
+      userToken: creatorToken.address,
+      prize,
+      proceeds,
+      mint,
+      creator: owner.publicKey,
+      appStats,
+      feeAccount,
+      owner: owner.publicKey
+    }).signers([owner.payer]).rpc()
+    console.log(tx);
+    balance = await connection.getBalance(owner.publicKey);
+    console.log(balance / LAMPORTS_PER_SOL);
+    accounts = await program.account.raffle.all();
+    console.log(accounts.length)
+  });
+});
