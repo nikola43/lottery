@@ -5,7 +5,6 @@ import { PublicKey, LAMPORTS_PER_SOL, TransactionMessage, VersionedTransaction }
 import { BN } from "bn.js";
 import NodeWallet from "@coral-xyz/anchor/dist/cjs/nodewallet";
 import { Account, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotent, createAssociatedTokenAccountIdempotentInstruction, createMint, getOrCreateAssociatedTokenAccount, mintTo, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { use } from "chai";
 
 
 describe("Lottery", () => {
@@ -31,16 +30,13 @@ describe("Lottery", () => {
   let ownerAta;
 
 
-  const feeAccount = users[0];
-  const user1 = users[1];
-  const user2 = users[2];
-  let winner;
+  const feeAccount = anchor.web3.Keypair.generate()
+  const adminAccount = anchor.web3.Keypair.generate()
+  let winners = [];
   const lotteryAccount = anchor.web3.Keypair.generate();
 
   console.log({
     owner: owner.publicKey.toBase58(),
-    user1: user1.publicKey.toBase58(),
-    user2: user2.publicKey.toBase58(),
     feeAccount: feeAccount.publicKey.toBase58(),
     lotteryAccount: lotteryAccount.publicKey.toBase58()
   })
@@ -57,11 +53,25 @@ describe("Lottery", () => {
       )
     );
 
+    await provider.connection.confirmTransaction(
+      await provider.connection.requestAirdrop(
+        feeAccount.publicKey,
+        2 * LAMPORTS_PER_SOL
+      )
+    );
+
+    await provider.connection.confirmTransaction(
+      await provider.connection.requestAirdrop(
+        adminAccount.publicKey,
+        2 * LAMPORTS_PER_SOL
+      )
+    );
+
     const fee_percent = 5;
     const [appStats, bump] = PublicKey.findProgramAddressSync(
       [
         anchor.utils.bytes.utf8.encode('app-stats'),
-        owner.publicKey.toBuffer()
+        owner.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -72,6 +82,7 @@ describe("Lottery", () => {
     ).accounts({
       appStats,
       feeAccount: feeAccount.publicKey,
+      adminAccount : adminAccount.publicKey
     }).rpc();
   });
 
@@ -81,7 +92,7 @@ describe("Lottery", () => {
 
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(
-        user1.publicKey,
+        users[0].publicKey,
         2 * LAMPORTS_PER_SOL
       )
     );
@@ -93,7 +104,7 @@ describe("Lottery", () => {
       owner.payer,
       owner.publicKey,
       owner.publicKey,
-      10,
+      9,
       mintKeypairSC,
       undefined,
       TOKEN_PROGRAM_ID
@@ -102,23 +113,23 @@ describe("Lottery", () => {
     // Initialise ATA
     ownerAta = await getOrCreateAssociatedTokenAccount(
       provider.connection,
-      user1,
+      users[0],
       mint,
       owner.publicKey
     );
 
     // Top up test account with SPL
-    await mintTo(
-      provider.connection,
-      user1,
-      mint,
-      ownerAta.address,
-      owner.payer,
-      100000000000000000,
-      [],
-      undefined,
-      TOKEN_PROGRAM_ID
-    );
+    // await mintTo(
+    //   provider.connection,
+    //   user1,
+    //   mint,
+    //   ownerAta.address,
+    //   owner.payer,
+    //   1000000000 * 1000, // 1000 tokens
+    //   [],
+    //   undefined,
+    //   TOKEN_PROGRAM_ID
+    // );
 
     // transfer tokens to user1
   })
@@ -156,23 +167,11 @@ describe("Lottery", () => {
         mint,
         usersAtas[i].address,
         owner.payer,
-        10000000000, // 10 tokens
+        1000000000 * 1000, // 1000 tokens
         [],
         undefined,
         TOKEN_PROGRAM_ID
       );
-
-      // await mintTo(
-      //   provider.connection,
-      //   owner.payer,
-      //   mintSC,
-      //   usersAtas[i].address,
-      //   mintAuthSC,
-      //   100000000,
-      //   [],
-      //   undefined,
-      //   TOKEN_PROGRAM_ID
-      // );
     }
   })
 
@@ -185,7 +184,6 @@ describe("Lottery", () => {
       //const ticketPrice = new BN(1);
       const ticketAmount = 100;
       //console.log(prizeAmount.toString());
-      const end = new BN(Date.now() + 1);
 
       const [prize, prize_bump] = PublicKey.findProgramAddressSync(
         [anchor.utils.bytes.utf8.encode("prize"), lotteryAccount.publicKey.toBuffer()],
@@ -200,7 +198,6 @@ describe("Lottery", () => {
       const ixn1 = await program.methods.createLottery(
         ticketPrice,
         ticketAmount,
-        end,
         prize_bump,
         proceeds_bump
       ).accounts({
@@ -230,6 +227,7 @@ describe("Lottery", () => {
       );
 
     } catch (error) {
+      console.error(error);
       // if (error instanceof SendTransactionError) {
       //   const logs = error.getLogs(connection);
       //   console.log("Transaction Error Logs:", logs);
@@ -244,7 +242,6 @@ describe("Lottery", () => {
     const ticketAmount = lotteryInfo.ticketAmount
     const leftTickets = lotteryInfo.leftTickets.length
     const ticketPrice = lotteryInfo.ticketPrice
-    const end = lotteryInfo.end
     console.log({
       leftTickets,
       ticketAmount,
@@ -252,129 +249,130 @@ describe("Lottery", () => {
     })
     //console.log(lotteryInfo);
   })
-  it("Buy tickets", async () => {
+  // it("Buy tickets", async () => {
 
-    const [prize, prize_bump] = PublicKey.findProgramAddressSync(
-      [anchor.utils.bytes.utf8.encode("prize"), lotteryAccount.publicKey.toBuffer()],
-      program.programId
-    );
+  //   const [prize, prize_bump] = PublicKey.findProgramAddressSync(
+  //     [anchor.utils.bytes.utf8.encode("prize"), lotteryAccount.publicKey.toBuffer()],
+  //     program.programId
+  //   );
 
-    const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
-      [
-        anchor.utils.bytes.utf8.encode('proceeds'),
-        lotteryAccount.publicKey.toBuffer(),
-      ],
-      program.programId
-    );
+  //   const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
+  //     [
+  //       anchor.utils.bytes.utf8.encode('proceeds'),
+  //       lotteryAccount.publicKey.toBuffer(),
+  //     ],
+  //     program.programId
+  //   );
 
-    const [appStats, bump] = PublicKey.findProgramAddressSync(
-      [
-        anchor.utils.bytes.utf8.encode('app-stats'),
-        owner.publicKey.toBuffer()
-      ],
-      program.programId
-    );
-
-    let balance = await connection.getBalance(user1.publicKey);
-    //console.log(balance)
-
-    for (let i = 1; i < users.length; i++) {
-      // const tx1 = await program.methods.buyTickets(
-      //   new BN(1)
-      // ).accounts({
-      //   creatorToken: usersAtas[i].address,
-      //   prize,
-      //   lottery: lotteryAccount.publicKey,
-      //   signer: users[i].publicKey,
-      //   proceeds,
-      //   appStats,
-      //   owner: owner.publicKey,
-      //   feeAccount: feeAccount.publicKey
-      // }).signers([users[i]]).rpc();
+  //   const [appStats, bump] = PublicKey.findProgramAddressSync(
+  //     [
+  //       anchor.utils.bytes.utf8.encode('app-stats'),
+  //       owner.publicKey.toBuffer()
+  //     ],
+  //     program.programId
+  //   );
 
 
+  //   for (let i = 0; i < users.length; i++) {
 
-      const tx1 = await program.methods.buyTickets(
-        new BN(1)
-      ).accounts({
-        prize,
-        creatorToken: usersAtas[i].address,
-        lottery: lotteryAccount.publicKey,
-        signer: users[i].publicKey,
-        proceeds,
-        appStats,
-        owner: owner.publicKey,
-        feeAccount:feeAccount.publicKey
-      }).signers([users[i]]).rpc();
 
-      console.log("user1 " + users[i].publicKey + " bought a ticket txn hash is ", tx1);
-    }
+  //     const tx1 = await program.methods.buyTickets(
+  //       new BN(2)
+  //     ).accounts({
+  //       prize,
+  //       creatorToken: usersAtas[i].address,
+  //       lottery: lotteryAccount.publicKey,
+  //       signer: users[i].publicKey,
+  //       proceeds,
+  //       appStats,
+  //       owner: owner.publicKey,
+  //       feeAccount:feeAccount.publicKey
+  //     }).signers([users[i]]).rpc();
 
-    // balance = await connection.getBalance(user1.publicKey);
-    // console.log("balance of user1 is ", balance / LAMPORTS_PER_SOL);
+  //     console.log("user1 " + users[i].publicKey + " bought a ticket txn hash is ", tx1);
+  //   }
 
-    const lotteryInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
-    const ticketAmount = lotteryInfo.ticketAmount
-    const leftTickets = lotteryInfo.leftTickets.length
-    const ticketPrice = lotteryInfo.ticketPrice
-    const buyers = lotteryInfo.buyers
-    const end = lotteryInfo.end
-    console.log({
-      buyers,
-      leftTickets,
-      ticketAmount,
-      ticketPrice: Number(ticketPrice.toString()) / Math.pow(10, 9)
-    })
-  });
+  //   // balance = await connection.getBalance(user1.publicKey);
+  //   // console.log("balance of user1 is ", balance / LAMPORTS_PER_SOL);
 
-  it("Reveal winner", async () => {
-    await sleep(2000)
-    const tx = await program.methods.revealWinner().accounts({
-      lottery: lotteryAccount.publicKey,
-      clock: anchor.web3.SYSVAR_CLOCK_PUBKEY
-    }).rpc().catch(e => console.log(e));
-    const raffleInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
-    //console.log(tx);
-    winner = users.find(user => user.publicKey.toBase58() === raffleInfo.winner.toBase58());
-    console.log('Winner is', raffleInfo.winner.toBase58());
-  });
+  //   const lotteryInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
+  //   const ticketAmount = lotteryInfo.ticketAmount
+  //   const leftTickets = lotteryInfo.leftTickets.length
+  //   const ticketPrice = lotteryInfo.ticketPrice
+  //   const buyers = lotteryInfo.buyers
+  //   const end = lotteryInfo.end
 
-  it("Claim prize", async () => {
+  //   for (let i = 0; i < buyers.length; i++) {
+  //     const buyer = buyers[i];
+  //     console.log({
+  //       participant: buyer.participant.toBase58(),
+  //       tickets: Array.from(buyer.tickets)
+  //     })
+  //   }
 
-    // let winner token balance before claiming
-    const winnerToken = await getOrCreateAssociatedTokenAccount(
-      connection,
-      winner,
-      mint,
-      winner.publicKey
-    )
-    let balance = await connection.getTokenAccountBalance(winnerToken.address);
-    console.log("winner token balance before claiming is ", balance.value.uiAmount);
+  //   console.log({
+  //     //lotteryInfo,
+  //     //buyers,
+  //     leftTickets,
+  //     ticketAmount,
+  //     ticketPrice: Number(ticketPrice.toString()) / Math.pow(10, 9)
+  //   })
+  // });
 
-    const raffleInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
+  // it("Reveal winners", async () => {
+  //   await sleep(2000)
+  //   const tx = await program.methods.revealWinner().accounts({
+  //     lottery: lotteryAccount.publicKey,
+  //     clock: anchor.web3.SYSVAR_CLOCK_PUBKEY
+  //   }).rpc().catch(e => console.log(e));
+  //   const raffleInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
+  //   console.log(raffleInfo);
+  //   console.log({
+  //     collected: raffleInfo.collected.toString(),
+  //   });
+  //   //winners = raffleInfo.winners;
+  //   //console.log("Winners are ", winners.map(winner => winner.toBase58()));
+  //   //console.log(tx);
+  //   //winner = users.find(user => user.publicKey.toBase58() === raffleInfo.winner.toBase58());
+  //   //console.log('Winner is', raffleInfo.winner.toBase58());
+  // });
 
-    const [prize, prize_bump] = PublicKey.findProgramAddressSync(
-      [
-        anchor.utils.bytes.utf8.encode('prize'),
-        lotteryAccount.publicKey.toBuffer(),
-      ],
-      program.programId
-    );
+  // it("Claim prize", async () => {
 
-    const tx = await program.methods.claimPrize().accounts(
-      {
-        user: winner.publicKey,
-        lottery: lotteryAccount.publicKey,
-        prize,
-        mint,
-        userToken: winnerToken.address
-      }
-    ).signers([winner]).rpc();
+  //   // let winner token balance before claiming
+  //   const winnerToken = await getOrCreateAssociatedTokenAccount(
+  //     connection,
+  //     winner,
+  //     mint,
+  //     winner.publicKey
+  //   )
+  //   let balance = await connection.getTokenAccountBalance(winnerToken.address);
+  //   console.log("winner token balance before claiming is ", balance.value.uiAmount);
 
-    balance = await connection.getTokenAccountBalance(winnerToken.address);
-    console.log("winner token balance after claiming is ", balance.value.uiAmount);
-    //console.log(tx);
-  })
+  //   const raffleInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
+
+  //   const [prize, prize_bump] = PublicKey.findProgramAddressSync(
+  //     [
+  //       anchor.utils.bytes.utf8.encode('prize'),
+  //       lotteryAccount.publicKey.toBuffer(),
+  //     ],
+  //     program.programId
+  //   );
+
+  //   const tx = await program.methods.claimPrize().accounts(
+  //     {
+  //       user: winner.publicKey,
+  //       lottery: lotteryAccount.publicKey,
+  //       prize,
+  //       mint,
+  //       userToken: winnerToken.address
+  //     }
+  //   ).signers([winner]).rpc();
+
+  //   balance = await connection.getTokenAccountBalance(winnerToken.address);
+  //   console.log("winner token balance after claiming is ", balance.value.uiAmount);
+  //   //console.log(tx);
+  // })
 
 
   // it("Collect proceeds", async () => {

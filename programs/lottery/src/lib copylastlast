@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::{ self, Create, AssociatedToken };
 use anchor_spl::token::{ self, Transfer, Mint, Token, TokenAccount };
 mod randomness_tools;
-use randomness_tools::get_sha256_hashed_random;
+use randomness_tools::get_sha256_hashed_randoms;
 declare_id!("E5Tmweyj2XLDn1L746PPdt7dAbG397qvTj8wYBqEaBSX");
 
 #[program]
@@ -12,11 +12,8 @@ pub mod lottery {
     pub fn create_app_stats(ctx: Context<CreateAppStats>, fee_percent: u8, bump: u8) -> Result<()> {
         let app_stats = &mut ctx.accounts.app_stats;
         app_stats.owner = ctx.accounts.signer.key();
-        app_stats.admin = ctx.accounts.admin_account.key();
         app_stats.fee_account = ctx.accounts.fee_account.key();
         app_stats.fee_percent = fee_percent;
-        app_stats.current_round = 0;
-        app_stats.current_round_key = Pubkey::default();
         app_stats.bump = bump;
         Ok(())
     }
@@ -30,19 +27,22 @@ pub mod lottery {
 
     pub fn create_lottery(
         ctx: Context<CreateLottery>,
-        ticket_price: u64,
+        price: u64,
         ticket_amount: u8,
+        end: i64,
         prize_bump: u8,
         proceeds_bump: u8
     ) -> Result<()> {
-        if ticket_price == 0 || ticket_amount <= 0{
+        if price == 0 || ticket_amount <= 0{
             return err!(ErrCode::InvalidArgus);
         }
         let now = ctx.accounts.clock.unix_timestamp as i64;
-        let end = now + 60 * 60 * 24; // 24 hours        
+        if end <= now {
+            return err!(ErrCode::InvalidArgus);
+        }
 
         let lottery = &mut ctx.accounts.lottery;
-        lottery.ticket_price = ticket_price;
+        lottery.ticket_price = price;
         lottery.ticket_amount = ticket_amount;
         lottery.left_tickets = (1..=lottery.ticket_amount).collect();
         lottery.start = now;
@@ -51,25 +51,22 @@ pub mod lottery {
         lottery.prize_token = ctx.accounts.mint.key();
         lottery.prize_bump = prize_bump;
         lottery.proceeds_bump = proceeds_bump;
-        //lottery.max_tickets_per_buyer = 5;
-
-        // let app_stats = &mut ctx.accounts.app_stats;
-        // app_stats.current_round += 1;
-        // app_stats.current_round_key = lottery.key();
-        
+        lottery.max_tickets_per_buyer = 5;
         Ok(())
     }
 
     pub fn buy_tickets(ctx: Context<BuyTickets>, amount: u64) -> Result<()> {
         let lottery: &mut Account<'_, Lottery> = &mut ctx.accounts.lottery;
         let ticket_price:u64 = lottery.ticket_price;
-        
+        //let fee_amount: u64 = (amount as u64 * price * (ctx.accounts.app_stats.fee_percent as u64)) / 100;
+        //let real_amount:u64 = (amount as u64) * price - fee_amount;
+
         let now = ctx.accounts.clock.unix_timestamp as i64;
         let end_ts = lottery.end;
 
         // check duration sanity
         if now > end_ts {
-            return err!(ErrCode::RoundEnded);
+            return err!(ErrCode::InvalidSchedule);
         }
 
         // check available tickets
@@ -77,7 +74,11 @@ pub mod lottery {
             return err!(ErrCode::InvalidArgus);
         }
 
-        // transfer tokens from buyer to prize account
+        // if ctx.accounts.signer.to_account_info().lamports() < real_amount {
+        //     return err!(ErrCode::InvalidFund);
+        // }
+
+        // send token
         let cpi_accounts = Transfer {
             from: ctx.accounts.creator_token.to_account_info(),
             to: ctx.accounts.prize.to_account_info(),
@@ -87,9 +88,12 @@ pub mod lottery {
         let cpi_ctx: CpiContext<Transfer> = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, ticket_price * amount)?;
 
+        // get random number
         for _ in 0..amount {
             let slot = ctx.accounts.clock.unix_timestamp as u64;
-            let n = get_sha256_hashed_random(slot,lottery.left_tickets.len() as u64);
+            //let random_number = (slot as usize) % lottery.left_tickets.len();
+
+            let n = get_sha256_hashed_randoms(slot,lottery.left_tickets.len() as u64);
             let random_number = (n as usize) % lottery.left_tickets.len();
 
             // Determine the index of the existing buyer, if any
@@ -143,20 +147,18 @@ pub mod lottery {
         //     return err!(ErrCode::InvalidSchedule);
         // }
 
-        let buyers_len = lottery.buyers.len(); 
+        let buyers_len = lottery.buyers.len(); // Immutable borrow occurs here
 
         // Check if there are no buyers
         if buyers_len == 0 {
-            return err!(ErrCode::BuyerListEmpty);
+            return err!(ErrCode::NoBuyer);
         }
 
-        let slot = ctx.accounts.clock.unix_timestamp as u64;
+        let slot = ctx.accounts.clock.unix_timestamp as i64;
         let mut temp_winners: Vec<Winner> = Vec::new(); // Temporary vector to hold winners
 
         for _ in 0..(buyers_len / 2) {
-            // let random_number = slot % (buyers_len as i64);
-            let n = get_sha256_hashed_random(slot,lottery.left_tickets.len() as u64);
-            let random_number = (n as usize) % lottery.left_tickets.len();
+            let random_number = slot % (buyers_len as i64);
             let winner = Winner {
                 participant: lottery.buyers[random_number as usize].participant,
                 claimed: false,
@@ -251,9 +253,6 @@ pub struct AppStats {
     pub fee_account: Pubkey,
     pub fee_percent: u8,
     pub owner: Pubkey,
-    pub admin: Pubkey,
-    pub current_round: u64,
-    pub current_round_key: Pubkey,
     bump: u8,
 }
 
@@ -261,9 +260,6 @@ pub struct AppStats {
 pub struct CreateAppStats<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
-   
-    /// CHECK:don't read and write this account
-    pub admin_account:  AccountInfo<'info>,
 
     /// CHECK:don't read and write this account
     pub fee_account: AccountInfo<'info>,
@@ -271,7 +267,7 @@ pub struct CreateAppStats<'info> {
     #[account(
         init,
         payer = signer,
-        space = 8 + 32 * 2 + 2 + 32 + 8 + 32,
+        space = 8 + 32 * 2 + 2,
         seeds = [b"app-stats", signer.key().as_ref()],
         bump
     )]
@@ -323,7 +319,6 @@ pub struct CreateLottery<'info> {
     pub mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    //pub app_stats: Account<'info, AppStats>,
 }
 
 #[account]
@@ -471,8 +466,8 @@ pub struct CollectProceed<'info> {
 
 #[error_code]
 pub enum ErrCode {
-    #[msg("Lottery round ended")]
-    RoundEnded,
+    #[msg("Invalid vesting schedule given.")]
+    InvalidSchedule,
     #[msg("Invalid associated token address. Did you provide the correct address?")]
     InvalidAssociatedTokenAddress,
     #[msg("Insufficient fund")]
@@ -487,8 +482,8 @@ pub enum ErrCode {
     AlreadyClaimd,
     #[msg("Invalid arguments")]
     InvalidArgus,
-    #[msg("Buyers list is empty")]
-    BuyerListEmpty,
+    #[msg("No buyer")]
+    NoBuyer,
     #[msg("Maximum tickets per buyer reached")]
     MaxTicketsPerBuyer,
 }

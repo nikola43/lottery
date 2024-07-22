@@ -1,8 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::{ self, Create, AssociatedToken };
 use anchor_spl::token::{ self, Transfer, Mint, Token, TokenAccount };
-mod randomness_tools;
-use randomness_tools::get_sha256_hashed_random;
+
 declare_id!("E5Tmweyj2XLDn1L746PPdt7dAbG397qvTj8wYBqEaBSX");
 
 #[program]
@@ -12,12 +11,10 @@ pub mod lottery {
     pub fn create_app_stats(ctx: Context<CreateAppStats>, fee_percent: u8, bump: u8) -> Result<()> {
         let app_stats = &mut ctx.accounts.app_stats;
         app_stats.owner = ctx.accounts.signer.key();
-        app_stats.admin = ctx.accounts.admin_account.key();
         app_stats.fee_account = ctx.accounts.fee_account.key();
         app_stats.fee_percent = fee_percent;
-        app_stats.current_round = 0;
-        app_stats.current_round_key = Pubkey::default();
         app_stats.bump = bump;
+
         Ok(())
     }
 
@@ -25,24 +22,28 @@ pub mod lottery {
         let app_stats = &mut ctx.accounts.app_stats;
         app_stats.fee_account = ctx.accounts.fee_account.key();
         app_stats.fee_percent = fee_percent;
+
         Ok(())
     }
 
     pub fn create_lottery(
         ctx: Context<CreateLottery>,
-        ticket_price: u64,
+        price: u64,
         ticket_amount: u8,
+        end: i64,
         prize_bump: u8,
         proceeds_bump: u8
     ) -> Result<()> {
-        if ticket_price == 0 || ticket_amount <= 0{
+        if price == 0 || ticket_amount <= 0{
             return err!(ErrCode::InvalidArgus);
         }
         let now = ctx.accounts.clock.unix_timestamp as i64;
-        let end = now + 60 * 60 * 24; // 24 hours        
+        if end <= now {
+            return err!(ErrCode::InvalidArgus);
+        }
 
         let lottery = &mut ctx.accounts.lottery;
-        lottery.ticket_price = ticket_price;
+        lottery.ticket_price = price;
         lottery.ticket_amount = ticket_amount;
         lottery.left_tickets = (1..=lottery.ticket_amount).collect();
         lottery.start = now;
@@ -51,25 +52,21 @@ pub mod lottery {
         lottery.prize_token = ctx.accounts.mint.key();
         lottery.prize_bump = prize_bump;
         lottery.proceeds_bump = proceeds_bump;
-        //lottery.max_tickets_per_buyer = 5;
-
-        // let app_stats = &mut ctx.accounts.app_stats;
-        // app_stats.current_round += 1;
-        // app_stats.current_round_key = lottery.key();
-        
         Ok(())
     }
 
     pub fn buy_tickets(ctx: Context<BuyTickets>, amount: u64) -> Result<()> {
         let lottery: &mut Account<'_, Lottery> = &mut ctx.accounts.lottery;
         let ticket_price:u64 = lottery.ticket_price;
-        
+        //let fee_amount: u64 = (amount as u64 * price * (ctx.accounts.app_stats.fee_percent as u64)) / 100;
+        //let real_amount:u64 = (amount as u64) * price - fee_amount;
+
         let now = ctx.accounts.clock.unix_timestamp as i64;
         let end_ts = lottery.end;
 
         // check duration sanity
         if now > end_ts {
-            return err!(ErrCode::RoundEnded);
+            return err!(ErrCode::InvalidSchedule);
         }
 
         // check available tickets
@@ -77,7 +74,11 @@ pub mod lottery {
             return err!(ErrCode::InvalidArgus);
         }
 
-        // transfer tokens from buyer to prize account
+        // if ctx.accounts.signer.to_account_info().lamports() < real_amount {
+        //     return err!(ErrCode::InvalidFund);
+        // }
+
+        // send token
         let cpi_accounts = Transfer {
             from: ctx.accounts.creator_token.to_account_info(),
             to: ctx.accounts.prize.to_account_info(),
@@ -87,49 +88,21 @@ pub mod lottery {
         let cpi_ctx: CpiContext<Transfer> = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, ticket_price * amount)?;
 
+        // get random number
         for _ in 0..amount {
-            let slot = ctx.accounts.clock.unix_timestamp as u64;
-            let n = get_sha256_hashed_random(slot,lottery.left_tickets.len() as u64);
-            let random_number = (n as usize) % lottery.left_tickets.len();
+            let slot = ctx.accounts.clock.unix_timestamp as i64;
+            let random_number = (slot as usize) % lottery.left_tickets.len();
 
-            // Determine the index of the existing buyer, if any
-            let buyer_index = lottery.buyers.iter().position(|buyer| buyer.participant == ctx.accounts.signer.key());
-
-            // Clone the ticket number to be added since it will be used in both match arms
-            let ticket_to_add = lottery.left_tickets[random_number].clone();
-
-            match buyer_index {
-                Some(index) => {
-                    // Temporarily remove the buyer to bypass the borrow checker
-                    let mut buyer = lottery.buyers.remove(index);
-
-                    // check if the buyer has reached the maximum number of tickets
-                    if buyer.tickets.len() + amount as usize >= lottery.max_tickets_per_buyer as usize {
-                        return err!(ErrCode::MaxTicketsPerBuyer);
-                    }
-
-                    buyer.tickets.push(ticket_to_add);
-                    // Re-insert the buyer back at the same index
-                    lottery.buyers.insert(index, buyer);
-                },
-                None => {
-                    // check if the buyer has reached the maximum number of tickets
-                    if amount as usize >= lottery.max_tickets_per_buyer as usize {
-                        return err!(ErrCode::MaxTicketsPerBuyer);
-                    }
-                    // If the buyer does not exist, create a new buyer and add them to the list
-                    let buyer = Buyer {
-                        participant: ctx.accounts.signer.key(),
-                        tickets: vec![ticket_to_add],
-                    };
-                    lottery.buyers.push(buyer);
-                },
-            }
-            
+            // assign ticket for signer
+            let buyer = Buyer {
+                participant: ctx.accounts.signer.key(),
+                ticket_no: lottery.left_tickets[random_number],
+            };
+            lottery.buyers.push(buyer);
             lottery.left_tickets.remove(random_number);
         }
         // lottery.collected += real_amount;
-        lottery.collected += ticket_price * amount;
+        lottery.collected += amount;
         Ok(())
     }
 
@@ -143,20 +116,18 @@ pub mod lottery {
         //     return err!(ErrCode::InvalidSchedule);
         // }
 
-        let buyers_len = lottery.buyers.len(); 
+        let buyers_len = lottery.buyers.len(); // Immutable borrow occurs here
 
         // Check if there are no buyers
         if buyers_len == 0 {
-            return err!(ErrCode::BuyerListEmpty);
+            return err!(ErrCode::NoBuyer);
         }
 
-        let slot = ctx.accounts.clock.unix_timestamp as u64;
+        let slot = ctx.accounts.clock.unix_timestamp as i64;
         let mut temp_winners: Vec<Winner> = Vec::new(); // Temporary vector to hold winners
 
         for _ in 0..(buyers_len / 2) {
-            // let random_number = slot % (buyers_len as i64);
-            let n = get_sha256_hashed_random(slot,lottery.left_tickets.len() as u64);
-            let random_number = (n as usize) % lottery.left_tickets.len();
+            let random_number = slot % (buyers_len as i64);
             let winner = Winner {
                 participant: lottery.buyers[random_number as usize].participant,
                 claimed: false,
@@ -165,9 +136,13 @@ pub mod lottery {
             temp_winners.push(winner);
         }
 
+        // Extend the lottery.winners with the temporary vector
+        // This is where the mutable borrow occurs, separate from the immutable borrows above
         lottery.winners.extend(temp_winners);
 
-        Ok(())        
+        Ok(())
+
+        
     }
 
     pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
@@ -243,7 +218,69 @@ pub mod lottery {
         Ok(())
     }
 
-    
+    // pub fn collect_proceed(ctx: Context<CollectProceed>) -> Result<()> {
+    //     let lottery = &mut ctx.accounts.lottery;
+
+    //     if lottery.winner != ctx.accounts.system_program.key() && lottery.claimed_amount == 0 {
+    //         return err!(ErrCode::InvalidSchedule);
+    //     }
+
+    //     if lottery.winner != ctx.accounts.system_program.key() {
+    //         let amount: u64 = lottery.collected;
+    //         let nonce: u8 = lottery.proceeds_bump;
+    //         let binding: Pubkey = lottery.key();
+    //         let seeds: &[&[u8]; 3] = &[b"proceeds".as_ref(), binding.as_ref(), &[nonce]];
+    //         let signer: &[&[&[u8]]; 1] = &[&seeds[..]];
+    //         let fee_amount: u64 = amount * (ctx.accounts.app_stats.fee_percent as u64) / 100;
+    //         // send fee
+    //         let fee_ix = anchor_lang::solana_program::system_instruction::transfer(
+    //             &ctx.accounts.proceeds.key(),
+    //             &ctx.accounts.fee_account.key(),
+    //             fee_amount
+    //         );
+
+    //         anchor_lang::solana_program::program::invoke_signed(
+    //             &fee_ix,
+    //             &[
+    //                 ctx.accounts.proceeds.to_account_info(),
+    //                 ctx.accounts.fee_account.to_account_info(),
+    //             ],
+    //             signer
+    //         )?;
+    //         // collect sol
+    //         let ix = anchor_lang::solana_program::system_instruction::transfer(
+    //             &ctx.accounts.proceeds.key(),
+    //             &ctx.accounts.creator.key(),
+    //             amount - fee_amount
+    //         );
+
+    //         anchor_lang::solana_program::program::invoke_signed(
+    //             &ix,
+    //             &[ctx.accounts.proceeds.to_account_info(), ctx.accounts.creator.to_account_info()],
+    //             signer
+    //         )?;
+    //     }
+
+    //     // collect token
+    //     let refundable = lottery.prize_amount - lottery.claimed_amount;
+    //     if refundable > 0 {
+    //         let nonce: u8 = lottery.prize_bump;
+    //         let binding: Pubkey = lottery.key();
+    //         let seeds: &[&[u8]; 3] = &[b"prize".as_ref(), binding.as_ref(), &[nonce]];
+    //         let signer: &[&[&[u8]]; 1] = &[&seeds[..]];
+
+    //         let cpi_accounts: Transfer<'_> = Transfer {
+    //             from: ctx.accounts.prize.to_account_info(),
+    //             to: ctx.accounts.user_token.to_account_info(),
+    //             authority: ctx.accounts.prize.to_account_info(),
+    //         };
+    //         let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
+    //         let cpi_ctx: CpiContext<'_, '_, '_, '_, Transfer<'_>> = CpiContext::new(cpi_program, cpi_accounts).with_signer(signer);
+    //         token::transfer(cpi_ctx, lottery.prize_amount - lottery.claimed_amount)?;
+    //     }
+    //     // close account
+    //     Ok(())
+    // }
 }
 
 #[account]
@@ -251,9 +288,6 @@ pub struct AppStats {
     pub fee_account: Pubkey,
     pub fee_percent: u8,
     pub owner: Pubkey,
-    pub admin: Pubkey,
-    pub current_round: u64,
-    pub current_round_key: Pubkey,
     bump: u8,
 }
 
@@ -261,9 +295,6 @@ pub struct AppStats {
 pub struct CreateAppStats<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
-   
-    /// CHECK:don't read and write this account
-    pub admin_account:  AccountInfo<'info>,
 
     /// CHECK:don't read and write this account
     pub fee_account: AccountInfo<'info>,
@@ -271,7 +302,7 @@ pub struct CreateAppStats<'info> {
     #[account(
         init,
         payer = signer,
-        space = 8 + 32 * 2 + 2 + 32 + 8 + 32,
+        space = 8 + 32 * 2 + 2,
         seeds = [b"app-stats", signer.key().as_ref()],
         bump
     )]
@@ -323,7 +354,6 @@ pub struct CreateLottery<'info> {
     pub mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    //pub app_stats: Account<'info, AppStats>,
 }
 
 #[account]
@@ -341,13 +371,12 @@ pub struct Lottery {
     pub prize_bump: u8,
     pub proceeds_bump: u8,
     pub collected: u64,
-    pub max_tickets_per_buyer: u8,
 }
 
 #[derive(Debug, Clone, AnchorSerialize, AnchorDeserialize)]
 pub struct Buyer {
     pub participant: Pubkey,
-    pub tickets: Vec<u8>,
+    pub ticket_no: u8,
 }
 
 #[derive(Debug, Clone, AnchorSerialize, AnchorDeserialize)]
@@ -471,8 +500,8 @@ pub struct CollectProceed<'info> {
 
 #[error_code]
 pub enum ErrCode {
-    #[msg("Lottery round ended")]
-    RoundEnded,
+    #[msg("Invalid vesting schedule given.")]
+    InvalidSchedule,
     #[msg("Invalid associated token address. Did you provide the correct address?")]
     InvalidAssociatedTokenAddress,
     #[msg("Insufficient fund")]
@@ -487,8 +516,21 @@ pub enum ErrCode {
     AlreadyClaimd,
     #[msg("Invalid arguments")]
     InvalidArgus,
-    #[msg("Buyers list is empty")]
-    BuyerListEmpty,
-    #[msg("Maximum tickets per buyer reached")]
-    MaxTicketsPerBuyer,
+    #[msg("No buyer")]
+    NoBuyer,
 }
+
+
+// #[program]
+// pub mod lottery {
+//     use super::*;
+
+//     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+//         Ok(())
+//     }
+// }
+
+
+
+// #[derive(Accounts)]
+// pub struct Initialize {}
