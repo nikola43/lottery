@@ -60,7 +60,6 @@ pub mod lottery {
         app_stats.current_round = 0;
         app_stats.current_round_key = Pubkey::default();
         app_stats.current_round_list = Vec::new();
-        app_stats.mint = ctx.accounts.mint.key();
         app_stats.bump = bump;
         Ok(())
     }
@@ -316,7 +315,6 @@ pub struct AppStats {
     pub current_round: u64,
     pub current_round_key: Pubkey,
     pub current_round_list: Vec<Pubkey>,
-    pub mint: Pubkey,
     bump: u8,
 }
 
@@ -331,12 +329,10 @@ pub struct CreateAppStats<'info> {
     /// CHECK:don't read and write this account
     pub fee_account: AccountInfo<'info>,
 
-    pub mint: Account<'info, Mint>,
-
     #[account(
         init,
         payer = signer,
-        space = 8 + 32 * 2 + 2 + 32 + 8 + 32 + 88,
+        space = 8 + 32 * 2 + 2 + 32 + 8 + 32 + 32000,
         seeds = [b"app-stats", signer.key().as_ref()],
         bump
     )]
