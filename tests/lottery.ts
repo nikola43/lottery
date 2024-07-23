@@ -144,78 +144,79 @@ describe("Lottery", () => {
     //   bump
     // })
   });
-})
 
 
-// it("Create competition", async () => {
-//   try {
 
-//     const ticketPrice = new BN(10 * Math.pow(10, 9)); // 10 tokens
-//     console.log(ticketPrice.toString());
-//     //const ticketPrice = new BN(1);
-//     const ticketAmount = 100;
-//     //console.log(prizeAmount.toString());
+  it("Create competition", async () => {
+    try {
 
-//     const [prize, prize_bump] = PublicKey.findProgramAddressSync(
-//       [anchor.utils.bytes.utf8.encode("prize"), lotteryAccount.publicKey.toBuffer()],
-//       program.programId
-//     );
+      const ticketPrice = new BN(10 * Math.pow(10, 9)); // 10 tokens
+      console.log(ticketPrice.toString());
+      //const ticketPrice = new BN(1);
+      const ticketAmount = 100;
+      //console.log(prizeAmount.toString());
 
-//     const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
-//       [anchor.utils.bytes.utf8.encode("proceeds"), lotteryAccount.publicKey.toBuffer()],
-//       program.programId
-//     );
+      const [prize, prize_bump] = PublicKey.findProgramAddressSync(
+        [anchor.utils.bytes.utf8.encode("prize"), lotteryAccount.publicKey.toBuffer()],
+        program.programId
+      );
 
-//     const [appStats, bump] = PublicKey.findProgramAddressSync(
-//       [
-//         anchor.utils.bytes.utf8.encode('app-stats'),
-//         owner.publicKey.toBuffer(),
-//       ],
-//       program.programId
-//     );
+      const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
+        [anchor.utils.bytes.utf8.encode("proceeds"), lotteryAccount.publicKey.toBuffer()],
+        program.programId
+      );
 
-//     const ixn1 = await program.methods.createLottery(
-//       ticketPrice,
-//       ticketAmount,
-//       prize_bump,
-//       proceeds_bump
-//     ).accounts({
-//       lottery: lotteryAccount.publicKey,
-//       mint,
-//       prize,
-//       proceeds,
-//       appStats
-//     }).signers([
-//       lotteryAccount,
-//       owner.payer
-//     ]).instruction();
+      const [appStats, bump] = PublicKey.findProgramAddressSync(
+        [
+          anchor.utils.bytes.utf8.encode('app-stats'),
+          owner.publicKey.toBuffer(),
+        ],
+        program.programId
+      );
 
-//     const { blockhash } = await connection.getLatestBlockhash();
+      const ixn1 = await program.methods.createLottery(
+        ticketPrice,
+        ticketAmount,
+        prize_bump,
+        proceeds_bump
+      ).accounts({
+        lottery: lotteryAccount.publicKey,
+        mint,
+        prize,
+        proceeds,
+        appStats
+      }).signers([
+        lotteryAccount,
+        owner.payer
+      ]).instruction();
 
-//     const message = new TransactionMessage({
-//       payerKey: owner.publicKey,
-//       recentBlockhash: blockhash,
-//       instructions: [ixn1]
-//     }).compileToV0Message();
+      const { blockhash } = await connection.getLatestBlockhash();
 
-//     const transaction = new VersionedTransaction(message);
+      const message = new TransactionMessage({
+        payerKey: owner.publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ixn1]
+      }).compileToV0Message();
 
-//     transaction.sign([owner.payer, lotteryAccount]);
+      const transaction = new VersionedTransaction(message);
 
-//     await provider.connection.confirmTransaction(
-//       await provider.connection.sendRawTransaction(transaction.serialize())
-//     );
+      transaction.sign([owner.payer, lotteryAccount]);
 
-//   } catch (error) {
-//     console.error(error);
-//     // if (error instanceof SendTransactionError) {
-//     //   const logs = error.getLogs(connection);
-//     //   console.log("Transaction Error Logs:", logs);
-//     // } else {
-//     //   console.error("An unexpected error occurred:", error);
-//     // }
-//   }
-// });
+      await provider.connection.confirmTransaction(
+        await provider.connection.sendRawTransaction(transaction.serialize())
+      );
+
+    } catch (error) {
+      console.error(error);
+      // if (error instanceof SendTransactionError) {
+      //   const logs = error.getLogs(connection);
+      //   console.log("Transaction Error Logs:", logs);
+      // } else {
+      //   console.error("An unexpected error occurred:", error);
+      // }
+    }
+  });
+});
 
 // it("Should get lotteryInfo", async () => {
 //   const lotteryInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);

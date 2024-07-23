@@ -80,7 +80,7 @@ pub mod lottery {
         proceeds_bump: u8
     ) -> Result<()> {
         // Validations, check if the caller is admin, if ticket price is not zero, if ticket amount is not zero
-        if ctx.accounts.app_stats.admin != ctx.accounts.signer.key() {
+        if ctx.accounts.app_stats.owner != ctx.accounts.signer.key() {
             return err!(ErrCode::CallerIsNotAdmin);
         }
         if ticket_price == 0{
@@ -389,6 +389,7 @@ pub struct CreateLottery<'info> {
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub app_stats: Account<'info, AppStats>,
+    pub admin_account: AccountInfo<'info>,
 }
 
 #[account]
