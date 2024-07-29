@@ -250,73 +250,73 @@ pub mod lottery {
         let fee_percent = app_stats.fee_percent;
         let mut claimable_amount = 0;
     
-        // loop through lottery rounds
-        // for round in 0..app_stats.current_round {
-        //     let round_key = app_stats.current_round_list[round as usize];
-        //     // Get a mutable reference to the lottery
-        //     //let lottery = app_stats.lotteries.get_mut(0).unwrap();
-        //     //let lottery = app_stats.lotteries.get_mut(&round_key).unwrap();
+        //loop through lottery rounds
+        for round in 0..app_stats.current_round {
+            let round_key = app_stats.current_round_list[round as usize];
+            // Get a mutable reference to the lottery
+            //let lottery = app_stats.lotteries.get_mut(0).unwrap();
+            let lottery = app_stats.lotteries.get_mut(&round_key).unwrap();
 
-        //     // check if lottery is running, if yes, skip
-        //     if lottery.status == LotteryStatus::Running {
-        //         continue;
-        //     }
+            // check if lottery is running, if yes, skip
+            if lottery.status == LotteryStatus::Running {
+                continue;
+            }
 
-        //     // check if lottery is unresolved
-        //     if lottery.status == LotteryStatus::Unresolved {
-        //         // check if user is on the buyer list
-        //         let mut is_buyer = false;
-        //         let mut buyer_index = 0;
-        //         for (index, buyer) in lottery.buyers.iter().enumerate() {
-        //             if buyer.participant == ctx.accounts.user.key() {
-        //                 is_buyer = true;
-        //                 buyer_index = index;
-        //                 break;
-        //             }
-        //         }
+            // check if lottery is unresolved
+            if lottery.status == LotteryStatus::Unresolved {
+                // check if user is on the buyer list
+                let mut is_buyer = false;
+                let mut buyer_index = 0;
+                for (index, buyer) in lottery.buyers.iter().enumerate() {
+                    if buyer.participant == ctx.accounts.user.key() {
+                        is_buyer = true;
+                        buyer_index = index;
+                        break;
+                    }
+                }
 
-        //         if !is_buyer {
-        //             return err!(ErrCode::InvalidBuyer);
-        //         }
+                if !is_buyer {
+                    return err!(ErrCode::InvalidBuyer);
+                }
 
-        //         // calculate claimable amount, will be ticket price * number of tickets bought
-        //         claimable_amount += lottery.ticket_price * (lottery.buyers[buyer_index].tickets.len() as u64);
-        //         // substract fee from claimable amount
-        //         claimable_amount -= (claimable_amount * fee_percent as u64) / 100;
-        //         lottery.buyers.remove(buyer_index);
-        //     }
+                // calculate claimable amount, will be ticket price * number of tickets bought
+                claimable_amount += lottery.ticket_price * (lottery.buyers[buyer_index].tickets.len() as u64);
+                // substract fee from claimable amount
+                claimable_amount -= (claimable_amount * fee_percent as u64) / 100;
+                lottery.buyers.remove(buyer_index);
+            }
 
-        //     // check if lottery is ended
-        //     if lottery.status == LotteryStatus::Ended {
-        //         // check if user is on the winner list
-        //         let mut is_winner = false;
-        //         let mut winner_index = 0;
-        //         for (index, winner) in lottery.winners.iter().enumerate() {
-        //             if winner.participant == ctx.accounts.user.key() {
-        //                 is_winner = true;
-        //                 winner_index = index;
-        //                 break;
-        //             }
-        //         }
+            // check if lottery is ended
+            if lottery.status == LotteryStatus::Ended {
+                // check if user is on the winner list
+                let mut is_winner = false;
+                let mut winner_index = 0;
+                for (index, winner) in lottery.winners.iter().enumerate() {
+                    if winner.participant == ctx.accounts.user.key() {
+                        is_winner = true;
+                        winner_index = index;
+                        break;
+                    }
+                }
 
-        //         if !is_winner {
-        //             return err!(ErrCode::InvalidWinner);
-        //         }
+                if !is_winner {
+                    return err!(ErrCode::InvalidWinner);
+                }
 
-        //         // check if prize is already claimed
-        //         if lottery.winners[winner_index].claimed {
-        //             continue;
-        //         }
+                // check if prize is already claimed
+                if lottery.winners[winner_index].claimed {
+                    continue;
+                }
 
-        //         // calculate claimable amount
-        //         // calculate amount, for now we will use the collected amount divided number of winners
-        //         // todo: we should calculate amount based on number of tickets sold, not number of winners
-        //         let amount = lottery.collected / (lottery.winners.len() as u64);
-        //         lottery.claimed_amount += amount;
-        //         lottery.winners[winner_index].claimed = true;
-        //         lottery.winners[winner_index].claimed_amount = amount;
-        //     }
-        // }
+                // calculate claimable amount
+                // calculate amount, for now we will use the collected amount divided number of winners
+                // todo: we should calculate amount based on number of tickets sold, not number of winners
+                let amount = lottery.collected / (lottery.winners.len() as u64);
+                lottery.claimed_amount += amount;
+                lottery.winners[winner_index].claimed = true;
+                lottery.winners[winner_index].claimed_amount = amount;
+            }
+        }
 
         // check if claimable amount is zero
         if claimable_amount == 0 {
@@ -369,7 +369,7 @@ pub struct AppStats {
     pub current_round_key: Pubkey,
     pub current_round_list: Vec<Pubkey>,
     //pub lotteries: Vec<Lottery>,
-    //pub lotteries: HashMap<Pubkey, Lottery>,
+    pub lotteries: HashMap<Pubkey, Lottery>,
     //pub mint: Pubkey,
     bump: u8,
 }
