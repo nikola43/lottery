@@ -25,12 +25,12 @@ describe("Lottery", () => {
   const usersAtas: Account[] = [];
   const feeAccount = anchor.web3.Keypair.generate()
   const adminAccount = anchor.web3.Keypair.generate()
-  const lotteryAccount = anchor.web3.Keypair.generate();
+  //const lotteryAccount = anchor.web3.Keypair.generate();
 
   console.log({
     owner: owner.publicKey.toBase58(),
     feeAccount: feeAccount.publicKey.toBase58(),
-    lotteryAccount: lotteryAccount.publicKey.toBase58()
+    //lotteryAccount: lotteryAccount.publicKey.toBase58()
   })
 
   const mintKeypairSC = anchor.web3.Keypair.generate();
@@ -127,8 +127,7 @@ describe("Lottery", () => {
     ).accounts({
       appStats,
       mint,
-      feeAccount: feeAccount.publicKey,
-      adminAccount: adminAccount.publicKey
+      feeAccount: feeAccount.publicKey
     }).rpc();
 
     // [appStats, bump] = PublicKey.findProgramAddressSync(
@@ -151,18 +150,18 @@ describe("Lottery", () => {
     try {
 
       const ticketPrice = new BN(10 * Math.pow(10, 9)); // 10 tokens
-      console.log(ticketPrice.toString());
+      //console.log(ticketPrice.toString());
       //const ticketPrice = new BN(1);
       const ticketAmount = 100;
       //console.log(prizeAmount.toString());
 
       const [prize, prize_bump] = PublicKey.findProgramAddressSync(
-        [anchor.utils.bytes.utf8.encode("prize"), lotteryAccount.publicKey.toBuffer()],
+        [anchor.utils.bytes.utf8.encode("prize")],
         program.programId
       );
 
       const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
-        [anchor.utils.bytes.utf8.encode("proceeds"), lotteryAccount.publicKey.toBuffer()],
+        [anchor.utils.bytes.utf8.encode("proceeds")],
         program.programId
       );
 
@@ -180,13 +179,12 @@ describe("Lottery", () => {
         prize_bump,
         proceeds_bump
       ).accounts({
-        lottery: lotteryAccount.publicKey,
+        //lottery: lotteryAccount.publicKey,
         mint,
         prize,
-        proceeds,
+        //proceeds,
         appStats
       }).signers([
-        lotteryAccount,
         owner.payer
       ]).instruction();
 
@@ -200,7 +198,7 @@ describe("Lottery", () => {
 
       const transaction = new VersionedTransaction(message);
 
-      transaction.sign([owner.payer, lotteryAccount]);
+      transaction.sign([owner.payer]);
 
       await provider.connection.confirmTransaction(
         await provider.connection.sendRawTransaction(transaction.serialize())
@@ -216,20 +214,41 @@ describe("Lottery", () => {
       // }
     }
   });
-});
 
-// it("Should get lotteryInfo", async () => {
-//   const lotteryInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
-//   const ticketAmount = lotteryInfo.ticketAmount
-//   const leftTickets = lotteryInfo.leftTickets.length
-//   const ticketPrice = lotteryInfo.ticketPrice
-//   console.log({
-//     leftTickets,
-//     ticketAmount,
-//     ticketPrice: Number(ticketPrice.toString()) / Math.pow(10, 9)
-//   })
-//   //console.log(lotteryInfo);
-// })
+
+  it("Should get lotteryInfo", async () => {
+
+
+    let [appStats, bump] = PublicKey.findProgramAddressSync(
+      [
+        anchor.utils.bytes.utf8.encode('app-stats'),
+        owner.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    console.log({
+      appStats: appStats.toBase58(),
+      bump
+    })
+
+    const lotteryInfo = await program.account.appStats.fetch(appStats);
+    console.log(lotteryInfo);
+    //const lotteryInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
+  });
+
+  // const lotteryInfo = await program.account.lottery.fetch(lotteryAccount.publicKey);
+  // const ticketAmount = lotteryInfo.ticketAmount
+  // const leftTickets = lotteryInfo.leftTickets.length
+  // const ticketPrice = lotteryInfo.ticketPrice
+  // console.log({
+  //   leftTickets,
+  //   ticketAmount,
+  //   ticketPrice: Number(ticketPrice.toString()) / Math.pow(10, 9)
+  // })
+  //console.log(lotteryInfo);
+})
+
 // it("Buy tickets", async () => {
 
 //   const [prize, prize_bump] = PublicKey.findProgramAddressSync(

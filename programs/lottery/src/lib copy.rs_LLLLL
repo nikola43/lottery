@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::{ self, Create, AssociatedToken };
 use anchor_spl::token::{ self, Transfer, Mint, Token, TokenAccount };
-use std::collections::HashMap;
 mod randomness_tools;
 use randomness_tools::get_sha256_hashed_random;
 declare_id!("E5Tmweyj2XLDn1L746PPdt7dAbG397qvTj8wYBqEaBSX");
@@ -61,7 +60,7 @@ pub mod lottery {
         app_stats.current_round = 0;
         app_stats.current_round_key = Pubkey::default();
         app_stats.current_round_list = Vec::new();
-        //app_stats.mint = ctx.accounts.mint.key();
+        app_stats.mint = ctx.accounts.mint.key();
         app_stats.bump = bump;
         Ok(())
     }
@@ -202,30 +201,29 @@ pub mod lottery {
     }
 
     pub fn reveal_winners(ctx: Context<RevealWinner>) -> Result<()> {
-        // check lottery status
         let lottery = &mut ctx.accounts.lottery;
         let now = ctx.accounts.clock.unix_timestamp as i64;
         let end_ts = lottery.end;
-        if now > end_ts {
-            // TODO: if tickets sold are lower than 10, we set lottery as unresolved
-            // and allow users withdraw his tickets 
-            if lottery.ticket_amount as usize - lottery.left_tickets.len() < 10 {
-                lottery.status = LotteryStatus::Unresolved;
-            } else {
-                lottery.status = LotteryStatus::Ended;
-            }
-        } 
 
-        // check if buyers list is empty
+        // check duration sanity
+        // if (now < end_ts) && (lottery.buyers.len() < (lottery.ticket_amount as usize)) {
+        //     return err!(ErrCode::InvalidSchedule);
+        // }
+
         let buyers_len = lottery.buyers.len(); 
+
+        // Check if there are no buyers
         if buyers_len == 0 {
-            //return err!(ErrCode::BuyerListEmpty);
-            lottery.status = LotteryStatus::Unresolved;
-            return Ok(());
+            return err!(ErrCode::BuyerListEmpty);
         }
 
         let slot = ctx.accounts.clock.unix_timestamp as u64;
         let mut temp_winners: Vec<Winner> = Vec::new(); // Temporary vector to hold winners
+
+        // TODO: if tickets sold are lower than 10, we set lottery as unresolved
+        // and allow users withdraw his tickets
+        //lottery.claimed_amount = 0;
+        //lottery.collected = 0;
 
         // TODO: if buyers_len is odd, we will send one ticket to fee account
         for _ in 0..(buyers_len / 2) {
@@ -246,82 +244,34 @@ pub mod lottery {
     }
 
     pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
-        let app_stats = &mut ctx.accounts.app_stats;
-        let fee_percent = app_stats.fee_percent;
-        let mut claimable_amount = 0;
-    
-        // loop through lottery rounds
-        // for round in 0..app_stats.current_round {
-        //     let round_key = app_stats.current_round_list[round as usize];
-        //     // Get a mutable reference to the lottery
-        //     //let lottery = app_stats.lotteries.get_mut(0).unwrap();
-        //     //let lottery = app_stats.lotteries.get_mut(&round_key).unwrap();
+        let lottery = &mut ctx.accounts.lottery;
 
-        //     // check if lottery is running, if yes, skip
-        //     if lottery.status == LotteryStatus::Running {
-        //         continue;
-        //     }
-
-        //     // check if lottery is unresolved
-        //     if lottery.status == LotteryStatus::Unresolved {
-        //         // check if user is on the buyer list
-        //         let mut is_buyer = false;
-        //         let mut buyer_index = 0;
-        //         for (index, buyer) in lottery.buyers.iter().enumerate() {
-        //             if buyer.participant == ctx.accounts.user.key() {
-        //                 is_buyer = true;
-        //                 buyer_index = index;
-        //                 break;
-        //             }
-        //         }
-
-        //         if !is_buyer {
-        //             return err!(ErrCode::InvalidBuyer);
-        //         }
-
-        //         // calculate claimable amount, will be ticket price * number of tickets bought
-        //         claimable_amount += lottery.ticket_price * (lottery.buyers[buyer_index].tickets.len() as u64);
-        //         // substract fee from claimable amount
-        //         claimable_amount -= (claimable_amount * fee_percent as u64) / 100;
-        //         lottery.buyers.remove(buyer_index);
-        //     }
-
-        //     // check if lottery is ended
-        //     if lottery.status == LotteryStatus::Ended {
-        //         // check if user is on the winner list
-        //         let mut is_winner = false;
-        //         let mut winner_index = 0;
-        //         for (index, winner) in lottery.winners.iter().enumerate() {
-        //             if winner.participant == ctx.accounts.user.key() {
-        //                 is_winner = true;
-        //                 winner_index = index;
-        //                 break;
-        //             }
-        //         }
-
-        //         if !is_winner {
-        //             return err!(ErrCode::InvalidWinner);
-        //         }
-
-        //         // check if prize is already claimed
-        //         if lottery.winners[winner_index].claimed {
-        //             continue;
-        //         }
-
-        //         // calculate claimable amount
-        //         // calculate amount, for now we will use the collected amount divided number of winners
-        //         // todo: we should calculate amount based on number of tickets sold, not number of winners
-        //         let amount = lottery.collected / (lottery.winners.len() as u64);
-        //         lottery.claimed_amount += amount;
-        //         lottery.winners[winner_index].claimed = true;
-        //         lottery.winners[winner_index].claimed_amount = amount;
-        //     }
-        // }
-
-        // check if claimable amount is zero
-        if claimable_amount == 0 {
-            return err!(ErrCode::ClaimableAmountIsZero);
+        // check if user is on the winner list
+        let mut is_winner = false;
+        let mut winner_index = 0;
+        for (index, winner) in lottery.winners.iter().enumerate() {
+            if winner.participant == ctx.accounts.user.key() {
+                is_winner = true;
+                winner_index = index;
+                break;
+            }
         }
+
+        if !is_winner {
+            return err!(ErrCode::InvalidWinner);
+        }
+
+        // check if prize is already claimed
+        if lottery.winners[winner_index].claimed {
+            return err!(ErrCode::AlreadyClaimd);
+        }
+        lottery.winners[winner_index].claimed = true;
+        
+
+        // calculate amount, for now we will use the collected amount divided number of winners
+        // todo: we should calculate amount based on number of tickets sold, not number of winners
+        let amount = lottery.collected / (lottery.winners.len() as u64);
+        lottery.claimed_amount += amount;
 
         // format recipient token account if empty
         if ctx.accounts.user_token.data_is_empty() {
@@ -338,25 +288,58 @@ pub mod lottery {
             associated_token::create(cpi_ctx)?;
         }
 
-            // // send token
-            // let nonce: u8 = lottery.prize_bump;
-            // //let lottery = &mut ctx.accounts.lottery;
-            // //let binding: Pubkey = lottery.key();
-            // let binding: Pubkey = round_key;
-            // let seeds: &[&[u8]; 3] = &[b"prize".as_ref(), binding.as_ref(), &[nonce]];
-            // let signer: &[&[&[u8]]; 1] = &[&seeds[..]];
+        // send token
+        let nonce: u8 = lottery.prize_bump;
+        let lottery = &mut ctx.accounts.lottery;
+        let binding: Pubkey = lottery.key();
+        let seeds: &[&[u8]; 3] = &[b"prize".as_ref(), binding.as_ref(), &[nonce]];
+        let signer: &[&[&[u8]]; 1] = &[&seeds[..]];
 
-            // let cpi_accounts: Transfer<'_> = Transfer {
-            //     from: ctx.accounts.prize.to_account_info(),
-            //     to: ctx.accounts.user_token.to_account_info(),
-            //     authority: ctx.accounts.prize.to_account_info(),
-            // };
-            // let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
-            // let cpi_ctx: CpiContext<'_, '_, '_, '_, Transfer<'_>> = CpiContext::new(cpi_program, cpi_accounts).with_signer(signer);
-            // token::transfer(cpi_ctx, lottery.claimed_amount)?;
-        
-            Ok(())
-}  
+        let cpi_accounts: Transfer<'_> = Transfer {
+            from: ctx.accounts.prize.to_account_info(),
+            to: ctx.accounts.user_token.to_account_info(),
+            authority: ctx.accounts.prize.to_account_info(),
+        };
+        let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx: CpiContext<'_, '_, '_, '_, Transfer<'_>> = CpiContext::new(cpi_program, cpi_accounts).with_signer(signer);
+        token::transfer(cpi_ctx, lottery.claimed_amount)?;
+        Ok(())
+    }
+
+
+    /**
+     * 
+    */
+    pub fn update_lottery_status(ctx: Context<UpdateLotteryStatus>) -> Result<()> {
+        let lottery = &mut ctx.accounts.lottery;
+
+        let now = ctx.accounts.clock.unix_timestamp as i64;
+        let end_ts = lottery.end;
+        if now > end_ts {
+           // check if token sold is less than 10
+            if lottery.ticket_amount as usize - lottery.left_tickets.len() < 10 {
+                lottery.status = LotteryStatus::Unresolved;
+            } else {
+                lottery.status = LotteryStatus::Ended;
+            }
+        } 
+
+        Ok(())
+    }
+
+
+    // pub fn calculate_users_rewards(ctx: Context<CollectProceed>) -> Result<()> {
+    //     let lottery = &mut ctx.accounts.lottery;
+    //     let buyers_counter = &lottery.buyers.len();
+    //     println!("buyers: {}", buyers_counter);
+
+    //     // check if buyers length is zero
+    //     if &buyers_counter as usize == 0 {
+    //         return err!(ErrCode::BuyerListEmpty);
+    //     }
+
+    //     return Ok(());
+    // }
 }
 
 #[account]
@@ -368,9 +351,7 @@ pub struct AppStats {
     pub current_round: u64,
     pub current_round_key: Pubkey,
     pub current_round_list: Vec<Pubkey>,
-    //pub lotteries: Vec<Lottery>,
-    //pub lotteries: HashMap<Pubkey, Lottery>,
-    //pub mint: Pubkey,
+    pub mint: Pubkey,
     bump: u8,
 }
 
@@ -443,8 +424,6 @@ pub struct CreateLottery<'info> {
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub app_stats: Account<'info, AppStats>,
-
-    /// CHECK: don't read and write this account
     pub admin_account: AccountInfo<'info>,
 }
 
@@ -559,7 +538,45 @@ pub struct ClaimPrize<'info> {
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CollectProceed<'info> {
+    #[account(mut, constraint = lottery.creator == creator.key(), close=creator)]
+    pub lottery: Account<'info, Lottery>,
+
+    #[account(mut)]
+    pub creator: Signer<'info>,
+
+    #[account(mut)]
+    pub user_token: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub prize: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub proceeds: SystemAccount<'info>,
+
+    pub mint: Account<'info, Mint>,
+
+    #[account(
+        mut, 
+        seeds = [b"app-stats", owner.key().as_ref()], 
+        bump = app_stats.bump, 
+        constraint = fee_account.key() == app_stats.fee_account
+    )]
     pub app_stats: Account<'info, AppStats>,
+    
+    /// CHECK: don't read and write this account
+    #[account(mut)]
+    pub fee_account: AccountInfo<'info>,
+
+    /// CHECK: don't read and write this account
+    pub owner: AccountInfo<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Debug, Clone, AnchorSerialize, AnchorDeserialize,PartialEq)]
@@ -583,8 +600,6 @@ pub enum ErrCode {
     InvalidUnlockAmount,
     #[msg("You are not winner!")]
     InvalidWinner,
-    #[msg("You are not buyer!")]
-    InvalidBuyer,
     #[msg("Already claimed!")]
     AlreadyClaimd,
     #[msg("Invalid arguments")]
@@ -595,8 +610,6 @@ pub enum ErrCode {
     InvalidTicketPrice,
     #[msg("Invalid ticket amount")]
     InvalidTicketAmount,
-    #[msg("Claimable amount is zero")]
-    ClaimableAmountIsZero,
     #[msg("Buyers list is empty")]
     BuyerListEmpty,
     #[msg("Maximum tickets per buyer reached")]
