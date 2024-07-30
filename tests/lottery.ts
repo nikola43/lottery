@@ -11,7 +11,6 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-
 describe("Lottery", () => {
 
   const provider = anchor.AnchorProvider.env();
@@ -131,19 +130,28 @@ describe("Lottery", () => {
       //adminAccount: adminAccount.publicKey
     }).rpc();
 
-    // [appStats, bump] = PublicKey.findProgramAddressSync(
-    //   [
-    //     anchor.utils.bytes.utf8.encode('app-stats'),
-    //     owner.publicKey.toBuffer(),
-    //   ],
-    //   program.programId
-    // );
-
-    // console.log({
-    //   appStats: appStats.toBase58(),
-    //   bump
-    // })
+    // const appStatsData = await program.account.lottery.fetch(appStats);
+    // console.log(appStatsData);
   });
+
+  // it("update app stats", async () => {
+  //   const fee_percent = 5;
+  //   let [appStats, bump] = PublicKey.findProgramAddressSync(
+  //     [
+  //       anchor.utils.bytes.utf8.encode('app-stats'),
+  //       owner.publicKey.toBuffer(),
+  //     ],
+  //     program.programId
+  //   );
+
+  //   await program.methods.updateAppStats(fee_percent).accounts({
+  //     appStats,
+  //     feeAccount: anchor.web3.Keypair.generate().publicKey
+  //   }).rpc();
+
+  //   const appStatsData = await program.account.lottery.fetch(appStats);
+  //   console.log(appStatsData);
+  // })
 
 
 
@@ -166,7 +174,7 @@ describe("Lottery", () => {
         program.programId
       );
 
-      const [appStats, bump] = PublicKey.findProgramAddressSync(
+      let [appStats, bump] = PublicKey.findProgramAddressSync(
         [
           anchor.utils.bytes.utf8.encode('app-stats'),
           owner.publicKey.toBuffer(),
@@ -371,60 +379,6 @@ describe("Lottery", () => {
     //console.log(tx);
   })
 })
-
-// it("Collect proceeds", async () => {
-//   let accounts = await program.account.raffle.all();
-//   console.log(accounts.length)
-//   const creatorToken = await getOrCreateAssociatedTokenAccount(
-//     provider.connection,
-//     owner.payer,
-//     mint,
-//     owner.publicKey
-//   );
-
-//   const [prize, prize_bump] = PublicKey.findProgramAddressSync(
-//     [
-//       anchor.utils.bytes.utf8.encode('prize'),
-//       lottery.publicKey.toBuffer(),
-//     ],
-//     program.programId
-//   );
-
-//   const [proceeds, proceeds_bump] = PublicKey.findProgramAddressSync(
-//     [
-//       anchor.utils.bytes.utf8.encode('proceeds'),
-//       lottery.publicKey.toBuffer(),
-//     ],
-//     program.programId
-//   );
-//   let balance = await connection.getBalance(owner.publicKey);
-//   console.log(balance / LAMPORTS_PER_SOL);
-//   const [appStats, bump] = PublicKey.findProgramAddressSync(
-//     [
-//       anchor.utils.bytes.utf8.encode('app-stats'),
-//       owner.publicKey.toBuffer()
-//     ],
-//     program.programId
-//   );
-//   const tx = await program.methods.collectProceed().accounts({
-//     lottery: lottery.publicKey,
-//     userToken: creatorToken.address,
-//     prize,
-//     proceeds,
-//     mint,
-//     creator: owner.publicKey,
-//     appStats,
-//     feeAccount,
-//     owner: owner.publicKey
-//   }).signers([owner.payer]).rpc()
-//   console.log(tx);
-//   balance = await connection.getBalance(owner.publicKey);
-//   console.log(balance / LAMPORTS_PER_SOL);
-//   accounts = await program.account.raffle.all();
-//   console.log(accounts.length)
-// });
-// });
-
 
 async function airdropSol(connection: any, publicKey: PublicKey) {
   await connection.confirmTransaction(

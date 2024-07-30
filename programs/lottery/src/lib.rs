@@ -58,9 +58,7 @@ pub mod lottery {
         //app_stats.admin = ctx.accounts.admin_account.key();
         app_stats.fee_account = ctx.accounts.fee_account.key();
         app_stats.fee_percent = fee_percent;
-        app_stats.current_round = 0;
-        app_stats.current_round_key = Pubkey::default();
-        app_stats.current_round_list = Vec::new();
+        app_stats.rounds = Vec::new();
         //app_stats.mint = ctx.accounts.mint.key();
         app_stats.bump = bump;
         Ok(())
@@ -105,9 +103,12 @@ pub mod lottery {
         lottery.status = LotteryStatus::Running;
 
         let app_stats = &mut ctx.accounts.app_stats;
-        app_stats.current_round += 1;
-        app_stats.current_round_key = lottery.key();
-        app_stats.current_round_list.push(lottery.key());
+        let mut current_round = app_stats.rounds.len();
+        msg!("Current round: {}", current_round);
+        app_stats.rounds.push(lottery.key());
+        current_round = app_stats.rounds.len();
+        msg!("Current round: {}", current_round);
+        msg!("Current round key: {}", app_stats.rounds[current_round - 1]);
         
         Ok(())
     }
@@ -247,12 +248,19 @@ pub mod lottery {
 
     pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
         let app_stats = &mut ctx.accounts.app_stats;
+        let current_round = app_stats.rounds.len();
+        //let current_round_key = app_stats.rounds[current_round - 1];
+        msg!("Current round: {:?}", app_stats.rounds);
+        //msg!("Current round key: {}", current_round_key);
+
         let fee_percent = app_stats.fee_percent;
         let mut claimable_amount = 10;
 
+ 
 
-        for round in 0..app_stats.current_round {
-            let round_key: Pubkey = app_stats.current_round_list[round as usize];
+
+        for round in 0..current_round {
+            let round_key: Pubkey = app_stats.rounds[round as usize];
 
             // Define the seeds used to derive the PDA
             let seeds = &[b"lottery", round_key.as_ref()];
@@ -266,8 +274,10 @@ pub mod lottery {
             let mut lottery: Lottery = Lottery::try_from_slice(&lottery_data)?;
 
             //claimable_amount += lottery.collected as i32;
-            lottery.collected = 0;
+            //lottery.collected = 0;
 
+            msg!("Number of buyers: {}", lottery.buyers.len());
+            msg!("Number of winner: {}", lottery.winners.len());
         }
 
 
@@ -387,9 +397,7 @@ pub struct AppStats {
     pub fee_percent: u8,
     pub owner: Pubkey,
     pub admin: Pubkey,
-    pub current_round: u64,
-    pub current_round_key: Pubkey,
-    pub current_round_list: Vec<Pubkey>,
+    pub rounds: Vec<Pubkey>,
     //pub lotteries: Vec<Lottery>,
     //pub lotteries: HashMap<Pubkey, Lottery>,
     //pub mint: Pubkey,
