@@ -443,9 +443,7 @@ pub struct CreateLottery<'info> {
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub app_stats: Account<'info, AppStats>,
-
-    // /// CHECK: don't read and write this account
-    // pub admin_account: AccountInfo<'info>,
+    pub admin_account: AccountInfo<'info>,
 }
 
 #[account]
