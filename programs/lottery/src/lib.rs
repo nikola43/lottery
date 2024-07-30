@@ -55,7 +55,7 @@ pub mod lottery {
     pub fn create_app_stats(ctx: Context<CreateAppStats>, fee_percent: u8, bump: u8) -> Result<()> {
         let app_stats = &mut ctx.accounts.app_stats;
         app_stats.owner = ctx.accounts.signer.key();
-        app_stats.admin = ctx.accounts.admin_account.key();
+        //app_stats.admin = ctx.accounts.admin_account.key();
         app_stats.fee_account = ctx.accounts.fee_account.key();
         app_stats.fee_percent = fee_percent;
         app_stats.current_round = 0;
@@ -379,8 +379,8 @@ pub struct CreateAppStats<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
    
-    /// CHECK:don't read and write this account
-    pub admin_account:  AccountInfo<'info>,
+    // /// CHECK:don't read and write this account
+    // pub admin_account:  AccountInfo<'info>,
 
     /// CHECK:don't read and write this account
     pub fee_account: AccountInfo<'info>,
@@ -444,8 +444,8 @@ pub struct CreateLottery<'info> {
     pub system_program: Program<'info, System>,
     pub app_stats: Account<'info, AppStats>,
 
-    /// CHECK: don't read and write this account
-    pub admin_account: AccountInfo<'info>,
+    // /// CHECK: don't read and write this account
+    // pub admin_account: AccountInfo<'info>,
 }
 
 #[account]

@@ -25,12 +25,12 @@ describe("Lottery", () => {
   const usersAtas: Account[] = [];
   const feeAccount = anchor.web3.Keypair.generate()
   const adminAccount = anchor.web3.Keypair.generate()
-  //const lotteryAccount = anchor.web3.Keypair.generate();
+  const lotteryAccount = anchor.web3.Keypair.generate();
 
   console.log({
     owner: owner.publicKey.toBase58(),
     feeAccount: feeAccount.publicKey.toBase58(),
-    //lotteryAccount: lotteryAccount.publicKey.toBase58()
+    lotteryAccount: lotteryAccount.publicKey.toBase58()
   })
 
   const mintKeypairSC = anchor.web3.Keypair.generate();
@@ -179,13 +179,14 @@ describe("Lottery", () => {
         prize_bump,
         proceeds_bump
       ).accounts({
-        //lottery: lotteryAccount.publicKey,
+        lottery: lotteryAccount.publicKey,
         mint,
         prize,
-        //proceeds,
+        proceeds,
         appStats
       }).signers([
-        owner.payer
+        owner.payer,
+        lotteryAccount
       ]).instruction();
 
       const { blockhash } = await connection.getLatestBlockhash();
@@ -198,7 +199,7 @@ describe("Lottery", () => {
 
       const transaction = new VersionedTransaction(message);
 
-      transaction.sign([owner.payer]);
+      transaction.sign([owner.payer, lotteryAccount]);
 
       await provider.connection.confirmTransaction(
         await provider.connection.sendRawTransaction(transaction.serialize())
