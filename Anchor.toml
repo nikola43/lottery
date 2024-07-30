@@ -5,14 +5,13 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-lottery = "E5Tmweyj2XLDn1L746PPdt7dAbG397qvTj8wYBqEaBSX"
+lottery = "B1xS2zq7MFpNuQvzm7VYjr54JUuaMrxCoVjRtw2oJvMr"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "Localnet"
-#cluster = "devnet"
 wallet = "/Users/typhon/solwallettest.json"
 
 [scripts]

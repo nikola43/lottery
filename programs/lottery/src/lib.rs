@@ -4,7 +4,7 @@ use anchor_spl::token::{ self, Transfer, Mint, Token, TokenAccount };
 use std::collections::HashMap;
 mod randomness_tools;
 use randomness_tools::get_sha256_hashed_random;
-declare_id!("E5Tmweyj2XLDn1L746PPdt7dAbG397qvTj8wYBqEaBSX");
+declare_id!("B1xS2zq7MFpNuQvzm7VYjr54JUuaMrxCoVjRtw2oJvMr");
 
 /*
 collect fees when user buys ticket
