@@ -248,7 +248,29 @@ pub mod lottery {
     pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
         let app_stats = &mut ctx.accounts.app_stats;
         let fee_percent = app_stats.fee_percent;
-        let mut claimable_amount = 0;
+        let mut claimable_amount = 10;
+
+
+        for round in 0..app_stats.current_round {
+            let round_key: Pubkey = app_stats.current_round_list[round as usize];
+
+            // Define the seeds used to derive the PDA
+            let seeds = &[b"lottery", round_key.as_ref()];
+            let (lottery_pda, _bump_seed) = Pubkey::find_program_address(seeds, ctx.program_id);
+
+            // Find the lottery account info from the remaining accounts
+            let lottery_account_info = ctx.remaining_accounts.iter().find(|account| account.key == &lottery_pda).ok_or(ProgramError::InvalidAccountData)?;
+
+            // Fetch the lottery account data
+            let lottery_data = &lottery_account_info.try_borrow_data()?;
+            let mut lottery: Lottery = Lottery::try_from_slice(&lottery_data)?;
+
+            //claimable_amount += lottery.collected as i32;
+            lottery.collected = 0;
+
+        }
+
+
     
         // loop through lottery rounds
         // for round in 0..app_stats.current_round {
@@ -324,19 +346,19 @@ pub mod lottery {
         }
 
         // format recipient token account if empty
-        if ctx.accounts.user_token.data_is_empty() {
-            let cpi_accounts = Create {
-                payer: ctx.accounts.user.to_account_info(),
-                associated_token: ctx.accounts.user_token.clone(),
-                authority: ctx.accounts.user.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            };
-            let cpi_program = ctx.accounts.associated_token_program.to_account_info();
-            let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-            associated_token::create(cpi_ctx)?;
-        }
+        // if ctx.accounts.user_token.data_is_empty() {
+        //     let cpi_accounts = Create {
+        //         payer: ctx.accounts.user.to_account_info(),
+        //         associated_token: ctx.accounts.user_token.clone(),
+        //         authority: ctx.accounts.user.to_account_info(),
+        //         mint: ctx.accounts.mint.to_account_info(),
+        //         system_program: ctx.accounts.system_program.to_account_info(),
+        //         token_program: ctx.accounts.token_program.to_account_info(),
+        //     };
+        //     let cpi_program = ctx.accounts.associated_token_program.to_account_info();
+        //     let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        //     associated_token::create(cpi_ctx)?;
+        // }
 
             // // send token
             // let nonce: u8 = lottery.prize_bump;
@@ -443,7 +465,7 @@ pub struct CreateLottery<'info> {
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub app_stats: Account<'info, AppStats>,
-    pub admin_account: AccountInfo<'info>,
+    //pub admin_account: AccountInfo<'info>,
 }
 
 #[account]
